@@ -46,25 +46,10 @@ export const BillProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         if (authUser) {
           console.log('Auth user found:', authUser.id);
           
-          // Get or create user profile
+          // Get user profile
           let userProfile = await supabaseService.getUserProfile(authUser.id);
           console.log('User profile from DB:', userProfile);
           
-          if (!userProfile) {
-            console.log('No profile found, creating new user profile...');
-            try {
-              userProfile = await supabaseService.createUserProfile(
-                authUser.id,
-                authUser.user_metadata?.name || authUser.email?.split('@')[0] || 'User',
-                authUser.email || ''
-              );
-              console.log('User profile created:', userProfile);
-            } catch (profileError) {
-              console.log('Error creating profile during init:', profileError);
-              // Continue anyway - user can create profile manually
-            }
-          }
-
           if (userProfile) {
             const user: User = {
               id: authUser.id,
@@ -74,84 +59,85 @@ export const BillProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
             console.log('Setting current user state:', user);
             setCurrentUserState(user);
-          } else {
-            console.log('No user profile available, user needs to create one');
-          }
 
-          // Get shared connection
-          try {
-            const connection = await supabaseService.getSharedConnection(authUser.id);
-            if (connection) {
-              console.log('Shared connection found:', connection.id);
-              setSharedConnection(connection);
-              
-              // Get connected user info
-              const connectedUserId = connection.user_id_1 === authUser.id ? connection.user_id_2 : connection.user_id_1;
-              const connectedUserProfile = await supabaseService.getUserProfile(connectedUserId);
-              if (connectedUserProfile) {
-                setConnectedUser({
-                  id: connectedUserId,
-                  name: connectedUserProfile.name,
-                  email: connectedUserProfile.email,
+            // Get shared connection
+            try {
+              const connection = await supabaseService.getSharedConnection(authUser.id);
+              if (connection) {
+                console.log('Shared connection found:', connection.id);
+                setSharedConnection(connection);
+                
+                // Get connected user info
+                const connectedUserId = connection.user_id_1 === authUser.id ? connection.user_id_2 : connection.user_id_1;
+                const connectedUserProfile = await supabaseService.getUserProfile(connectedUserId);
+                if (connectedUserProfile) {
+                  setConnectedUser({
+                    id: connectedUserId,
+                    name: connectedUserProfile.name,
+                    email: connectedUserProfile.email,
+                  });
+                }
+              }
+            } catch (connError) {
+              console.log('Error getting shared connection:', connError);
+            }
+
+            // Get bills
+            try {
+              const billsList = await supabaseService.getBills(authUser.id, undefined);
+              const formattedBills = billsList.map((bill: any) => ({
+                id: bill.id,
+                name: bill.name,
+                amount: bill.amount,
+                dueDate: bill.due_date,
+                frequency: bill.frequency,
+                notes: bill.notes,
+                createdAt: bill.created_at,
+                createdBy: bill.created_by,
+                paidByUser1: bill.paid_by_user_1,
+                paidByUser2: bill.paid_by_user_2,
+              }));
+              setBills(formattedBills);
+            } catch (billsError) {
+              console.log('Error getting bills:', billsError);
+            }
+
+            // Get activities
+            try {
+              const activitiesList = await supabaseService.getBillActivities();
+              const formattedActivities = activitiesList.map((activity: any) => ({
+                id: activity.id,
+                billId: activity.bill_id,
+                type: activity.action,
+                userId: activity.user_id,
+                userName: activity.details?.userName || 'Unknown',
+                description: activity.details?.description || '',
+                timestamp: activity.created_at,
+                metadata: activity.details?.metadata,
+              }));
+              setActivities(formattedActivities);
+            } catch (activitiesError) {
+              console.log('Error getting activities:', activitiesError);
+            }
+
+            // Get notification preferences
+            try {
+              const prefs = await supabaseService.getNotificationPreferences(authUser.id);
+              if (prefs) {
+                setNotificationPreferences({
+                  userId: authUser.id,
+                  daysBeforeDue: [prefs.reminder_days_before],
+                  notifyOnPaid: prefs.notify_on_paid,
+                  notifyOnOverdue: prefs.notify_on_overdue,
+                  enabled: true,
                 });
               }
+            } catch (prefsError) {
+              console.log('Error getting notification preferences:', prefsError);
             }
-          } catch (connError) {
-            console.log('Error getting shared connection:', connError);
-          }
-
-          // Get bills
-          try {
-            const billsList = await supabaseService.getBills(authUser.id, undefined);
-            const formattedBills = billsList.map((bill: any) => ({
-              id: bill.id,
-              name: bill.name,
-              amount: bill.amount,
-              dueDate: bill.due_date,
-              frequency: bill.frequency,
-              notes: bill.notes,
-              createdAt: bill.created_at,
-              createdBy: bill.created_by,
-              paidByUser1: bill.paid_by_user_1,
-              paidByUser2: bill.paid_by_user_2,
-            }));
-            setBills(formattedBills);
-          } catch (billsError) {
-            console.log('Error getting bills:', billsError);
-          }
-
-          // Get activities
-          try {
-            const activitiesList = await supabaseService.getBillActivities();
-            const formattedActivities = activitiesList.map((activity: any) => ({
-              id: activity.id,
-              billId: activity.bill_id,
-              type: activity.action,
-              userId: activity.user_id,
-              userName: activity.details?.userName || 'Unknown',
-              description: activity.details?.description || '',
-              timestamp: activity.created_at,
-              metadata: activity.details?.metadata,
-            }));
-            setActivities(formattedActivities);
-          } catch (activitiesError) {
-            console.log('Error getting activities:', activitiesError);
-          }
-
-          // Get notification preferences
-          try {
-            const prefs = await supabaseService.getNotificationPreferences(authUser.id);
-            if (prefs) {
-              setNotificationPreferences({
-                userId: authUser.id,
-                daysBeforeDue: [prefs.reminder_days_before],
-                notifyOnPaid: prefs.notify_on_paid,
-                notifyOnOverdue: prefs.notify_on_overdue,
-                enabled: true,
-              });
-            }
-          } catch (prefsError) {
-            console.log('Error getting notification preferences:', prefsError);
+          } else {
+            console.log('No user profile available, user needs to create one');
+            setCurrentUserState(null);
           }
         }
       } catch (error) {
@@ -183,16 +169,22 @@ export const BillProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (existingProfile) {
         // Update existing profile
         console.log('Updating existing profile');
-        await supabaseService.updateUserProfile(authUser.id, user);
+        const updatedProfile = await supabaseService.updateUserProfile(authUser.id, user);
+        console.log('Profile updated:', updatedProfile);
       } else {
         // Create new profile
-        console.log('Creating new profile');
+        console.log('Creating new profile with user_id:', authUser.id);
         const createdProfile = await supabaseService.createUserProfile(authUser.id, user.name, user.email || '');
         console.log('Profile created:', createdProfile);
       }
       
       console.log('Profile saved successfully, updating state');
-      setCurrentUserState(user);
+      // Update state with the authenticated user's ID to ensure consistency
+      const userToSet: User = {
+        ...user,
+        id: authUser.id,
+      };
+      setCurrentUserState(userToSet);
       
       // Verify the profile was saved by fetching it again
       const verifyProfile = await supabaseService.getUserProfile(authUser.id);
@@ -203,6 +195,7 @@ export const BillProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
     } catch (error) {
       console.log('Error setting current user:', error);
+      console.log('Error details:', error instanceof Error ? error.message : JSON.stringify(error));
       console.log('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
       throw error;
     }

@@ -6,7 +6,16 @@ import { generateId } from './billUtils';
 // User operations
 export const createUserProfile = async (userId: string, name: string, email: string) => {
   try {
-    console.log('Creating user profile for:', userId, name, email);
+    console.log('Creating user profile for userId:', userId, 'name:', name, 'email:', email);
+    
+    // Verify the user_id matches the authenticated user
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+    console.log('Current auth user:', authUser?.id);
+    
+    if (authUser?.id !== userId) {
+      console.error('User ID mismatch! Auth user:', authUser?.id, 'Provided userId:', userId);
+      throw new Error('User ID mismatch with authenticated user');
+    }
     
     const { data, error } = await supabase
       .from('users')
@@ -21,7 +30,9 @@ export const createUserProfile = async (userId: string, name: string, email: str
       .single();
 
     if (error) {
-      console.log('Error creating user profile - error details:', error);
+      console.log('Error creating user profile - error code:', error.code);
+      console.log('Error creating user profile - error message:', error.message);
+      console.log('Error creating user profile - full error:', JSON.stringify(error));
       throw error;
     }
     
@@ -29,6 +40,7 @@ export const createUserProfile = async (userId: string, name: string, email: str
     return data;
   } catch (error) {
     console.log('Error creating user profile:', error);
+    console.log('Error type:', error instanceof Error ? error.constructor.name : typeof error);
     throw error;
   }
 };
@@ -51,18 +63,29 @@ export const getUserProfile = async (userId: string) => {
 
 export const updateUserProfile = async (userId: string, updates: Partial<User>) => {
   try {
+    console.log('Updating user profile for userId:', userId);
+    
+    const updateData: any = {
+      updated_at: new Date().toISOString(),
+    };
+    
+    if (updates.name) updateData.name = updates.name;
+    if (updates.avatar_url) updateData.avatar_url = updates.avatar_url;
+    if (updates.email) updateData.email = updates.email;
+    
     const { data, error } = await supabase
       .from('users')
-      .update({
-        name: updates.name,
-        avatar_url: updates.avatar_url,
-        updated_at: new Date().toISOString(),
-      })
+      .update(updateData)
       .eq('user_id', userId)
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.log('Error updating user profile - error:', error);
+      throw error;
+    }
+    
+    console.log('User profile updated successfully:', data);
     return data;
   } catch (error) {
     console.log('Error updating user profile:', error);

@@ -35,6 +35,7 @@ export default function ProfileScreen() {
     if (currentUser) {
       setEditedName(currentUser.name);
       console.log('Profile screen - currentUser updated:', currentUser);
+      setIsLoading(false);
     } else {
       console.log('Profile screen - no currentUser');
     }
@@ -44,6 +45,9 @@ export default function ProfileScreen() {
   useFocusEffect(
     useCallback(() => {
       console.log('Profile screen focused - currentUser:', currentUser);
+      if (currentUser) {
+        setEditedName(currentUser.name);
+      }
     }, [currentUser])
   );
 
@@ -234,14 +238,15 @@ export default function ProfileScreen() {
                   
                   console.log('Calling setCurrentUser with:', newUser);
                   await setCurrentUser(newUser);
-                  console.log('Profile created successfully');
-                  Alert.alert('Success', 'Profile created successfully!');
+                  console.log('Profile created successfully, currentUser state:', currentUser);
                   
-                  // Force a small delay to ensure state updates
-                  await new Promise(resolve => setTimeout(resolve, 500));
+                  // Wait a moment for state to update
+                  await new Promise(resolve => setTimeout(resolve, 300));
+                  
+                  Alert.alert('Success', 'Profile created successfully!');
                 } catch (error) {
                   console.log('Error creating profile:', error);
-                  console.log('Error details:', JSON.stringify(error, null, 2));
+                  console.log('Error details:', error instanceof Error ? error.message : JSON.stringify(error));
                   const errorMessage = error instanceof Error ? error.message : 'Failed to create profile. Please try again.';
                   Alert.alert('Error', errorMessage);
                 } finally {

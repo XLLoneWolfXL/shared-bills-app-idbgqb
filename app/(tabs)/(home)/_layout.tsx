@@ -30,6 +30,13 @@ export default function HomeLayout() {
           presentation: 'modal',
         }}
       />
+      <Stack.Screen
+        name="bill-history"
+        options={{
+          title: 'Bill History',
+          presentation: 'modal',
+        }}
+      />
     </Stack>
   );
 }

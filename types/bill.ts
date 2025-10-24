@@ -1,5 +1,38 @@
 
 export type BillFrequency = 'one-time' | 'weekly' | 'monthly';
+export type BillStatus = 'due' | 'upcoming' | 'paid';
+
+export interface BillSplit {
+  user1Percentage: number; // 0-100
+  user2Percentage: number; // 0-100
+}
+
+export interface BillComment {
+  id: string;
+  userId: string;
+  userName: string;
+  text: string;
+  createdAt: string;
+}
+
+export interface BillActivity {
+  id: string;
+  billId: string;
+  type: 'created' | 'paid' | 'unpaid' | 'edited' | 'commented' | 'deleted';
+  userId: string;
+  userName: string;
+  description: string;
+  timestamp: string;
+  metadata?: Record<string, any>;
+}
+
+export interface NotificationPreference {
+  userId: string;
+  daysBeforeDue: number[]; // e.g., [1, 3, 7]
+  notifyOnPaid: boolean;
+  notifyOnOverdue: boolean;
+  enabled: boolean;
+}
 
 export interface Bill {
   id: string;
@@ -12,12 +45,16 @@ export interface Bill {
   createdBy: string; // userId
   paidByUser1: boolean;
   paidByUser2: boolean;
+  split?: BillSplit; // Default 50/50
+  comments?: BillComment[];
+  sharedNotes?: string;
 }
 
 export interface User {
   id: string;
   name: string;
   email?: string;
+  notificationPreferences?: NotificationPreference;
 }
 
 export interface ConnectionCode {
@@ -38,5 +75,3 @@ export interface SharedConnection {
   user2Accepted: boolean;
   connectedAt: string;
 }
-
-export type BillStatus = 'due' | 'upcoming' | 'paid';

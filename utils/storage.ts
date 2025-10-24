@@ -1,6 +1,6 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Bill, User, ConnectionCode, SharedConnection } from '@/types/bill';
+import { Bill, User, ConnectionCode, SharedConnection, BillActivity, NotificationPreference } from '@/types/bill';
 
 const STORAGE_KEYS = {
   CURRENT_USER: 'current_user',
@@ -8,6 +8,8 @@ const STORAGE_KEYS = {
   BILLS: 'bills',
   CONNECTION_CODES: 'connection_codes',
   SHARED_CONNECTIONS: 'shared_connections',
+  BILL_ACTIVITIES: 'bill_activities',
+  NOTIFICATION_PREFERENCES: 'notification_preferences',
 };
 
 // User Management
@@ -232,5 +234,100 @@ export const clearAllData = async (): Promise<void> => {
     await AsyncStorage.multiRemove(Object.values(STORAGE_KEYS));
   } catch (error) {
     console.log('Error clearing all data:', error);
+  }
+};
+
+// Bill Activity Management
+export const addBillActivity = async (activity: BillActivity): Promise<void> => {
+  try {
+    const activities = await AsyncStorage.getItem(STORAGE_KEYS.BILL_ACTIVITIES);
+    const activitiesList: BillActivity[] = activities ? JSON.parse(activities) : [];
+    activitiesList.push(activity);
+    await AsyncStorage.setItem(STORAGE_KEYS.BILL_ACTIVITIES, JSON.stringify(activitiesList));
+  } catch (error) {
+    console.log('Error adding bill activity:', error);
+  }
+};
+
+export const getBillActivities = async (billId?: string): Promise<BillActivity[]> => {
+  try {
+    const activities = await AsyncStorage.getItem(STORAGE_KEYS.BILL_ACTIVITIES);
+    if (!activities) return [];
+    const activitiesList: BillActivity[] = JSON.parse(activities);
+    if (billId) {
+      return activitiesList.filter(a => a.billId === billId).sort((a, b) => 
+        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      );
+    }
+    return activitiesList.sort((a, b) => 
+      new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
+  } catch (error) {
+    console.log('Error getting bill activities:', error);
+    return [];
+  }
+};
+
+export const getAllActivities = async (): Promise<BillActivity[]> => {
+  try {
+    const activities = await AsyncStorage.getItem(STORAGE_KEYS.BILL_ACTIVITIES);
+    if (!activities) return [];
+    const activitiesList: BillActivity[] = JSON.parse(activities);
+    return activitiesList.sort((a, b) => 
+      new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
+  } catch (error) {
+    console.log('Error getting all activities:', error);
+    return [];
+  }
+};
+
+// Notification Preferences Management
+export const getNotificationPreferences = async (userId: string): Promise<NotificationPreference> => {
+  try {
+    const prefs = await AsyncStorage.getItem(STORAGE_KEYS.NOTIFICATION_PREFERENCES);
+    if (!prefs) {
+      const defaultPrefs: NotificationPreference = {
+        userId,
+        daysBeforeDue: [1, 3, 7],
+        notifyOnPaid: true,
+        notifyOnOverdue: true,
+        enabled: true,
+      };
+      return defaultPrefs;
+    }
+    const prefsList: NotificationPreference[] = JSON.parse(prefs);
+    return prefsList.find(p => p.userId === userId) || {
+      userId,
+      daysBeforeDue: [1, 3, 7],
+      notifyOnPaid: true,
+      notifyOnOverdue: true,
+      enabled: true,
+    };
+  } catch (error) {
+    console.log('Error getting notification preferences:', error);
+    return {
+      userId,
+      daysBeforeDue: [1, 3, 7],
+      notifyOnPaid: true,
+      notifyOnOverdue: true,
+      enabled: true,
+    };
+  }
+};
+
+export const saveNotificationPreferences = async (prefs: NotificationPreference): Promise<void> => {
+  try {
+    const existingPrefs = await AsyncStorage.getItem(STORAGE_KEYS.NOTIFICATION_PREFERENCES);
+    const prefsList: NotificationPreference[] = existingPrefs ? JSON.parse(existingPrefs) : [];
+    const index = prefsList.findIndex(p => p.userId === prefs.userId);
+    if (index >= 0) {
+      prefsList[index] = prefs;
+    } else {
+      prefsList.push(prefs);
+    }
+    await AsyncStorage.setItem(STORAGE_KEYS.NOTIFICATION_PREFERENCES, JSON.stringify(prefsList));
+  } catch (error) {
+    console.log('Error saving notification preferences:', error);
   }
 };

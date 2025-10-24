@@ -1,7 +1,8 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { Bill, User, SharedConnection } from '@/types/bill';
+import { Bill, User, SharedConnection, BillActivity, NotificationPreference } from '@/types/bill';
 import * as storage from '@/utils/storage';
+import { generateId } from '@/utils/billUtils';
 
 interface BillContextType {
   currentUser: User | null;
@@ -16,6 +17,10 @@ interface BillContextType {
   acceptConnection: () => Promise<void>;
   disconnect: () => Promise<void>;
   isLoading: boolean;
+  activities: BillActivity[];
+  getActivities: (billId?: string) => Promise<BillActivity[]>;
+  notificationPreferences: NotificationPreference | null;
+  updateNotificationPreferences: (prefs: NotificationPreference) => Promise<void>;
 }
 
 const BillContext = createContext<BillContextType | undefined>(undefined);
@@ -25,6 +30,8 @@ export const BillProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [bills, setBills] = useState<Bill[]>([]);
   const [sharedConnection, setSharedConnection] = useState<SharedConnection | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [activities, setActivities] = useState<BillActivity[]>([]);
+  const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreference | null>(null);
 
   // Initialize on mount
   useEffect(() => {
@@ -37,6 +44,10 @@ export const BillProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           setSharedConnection(connection);
           const billsList = await storage.getBills();
           setBills(billsList);
+          const allActivities = await storage.getAllActivities();
+          setActivities(allActivities);
+          const prefs = await storage.getNotificationPreferences(user.id);
+          setNotificationPreferences(prefs);
         }
       } catch (error) {
         console.log('Error initializing:', error);
@@ -63,6 +74,19 @@ export const BillProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       await storage.saveBill(bill);
       setBills([...bills, bill]);
+      
+      // Log activity
+      const activity: BillActivity = {
+        id: generateId(),
+        billId: bill.id,
+        type: 'created',
+        userId: currentUser?.id || '',
+        userName: currentUser?.name || 'Unknown',
+        description: `Created bill "${bill.name}" for $${bill.amount.toFixed(2)}`,
+        timestamp: new Date().toISOString(),
+      };
+      await storage.addBillActivity(activity);
+      setActivities([activity, ...activities]);
     } catch (error) {
       console.log('Error adding bill:', error);
       throw error;
@@ -71,8 +95,26 @@ export const BillProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const updateBill = async (bill: Bill) => {
     try {
+      const oldBill = bills.find(b => b.id === bill.id);
       await storage.saveBill(bill);
       setBills(bills.map(b => b.id === bill.id ? bill : b));
+      
+      // Log activity for payment status changes
+      if (oldBill) {
+        if (oldBill.paidByUser1 !== bill.paidByUser1 || oldBill.paidByUser2 !== bill.paidByUser2) {
+          const activity: BillActivity = {
+            id: generateId(),
+            billId: bill.id,
+            type: bill.paidByUser1 && bill.paidByUser2 ? 'paid' : 'unpaid',
+            userId: currentUser?.id || '',
+            userName: currentUser?.name || 'Unknown',
+            description: `Marked bill "${bill.name}" as ${bill.paidByUser1 && bill.paidByUser2 ? 'paid' : 'unpaid'}`,
+            timestamp: new Date().toISOString(),
+          };
+          await storage.addBillActivity(activity);
+          setActivities([activity, ...activities]);
+        }
+      }
     } catch (error) {
       console.log('Error updating bill:', error);
       throw error;
@@ -81,8 +123,24 @@ export const BillProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const deleteBill = async (billId: string) => {
     try {
+      const bill = bills.find(b => b.id === billId);
       await storage.deleteBill(billId);
       setBills(bills.filter(b => b.id !== billId));
+      
+      // Log activity
+      if (bill) {
+        const activity: BillActivity = {
+          id: generateId(),
+          billId: billId,
+          type: 'deleted',
+          userId: currentUser?.id || '',
+          userName: currentUser?.name || 'Unknown',
+          description: `Deleted bill "${bill.name}"`,
+          timestamp: new Date().toISOString(),
+        };
+        await storage.addBillActivity(activity);
+        setActivities([activity, ...activities]);
+      }
     } catch (error) {
       console.log('Error deleting bill:', error);
       throw error;
@@ -144,6 +202,26 @@ export const BillProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+  const getActivities = async (billId?: string): Promise<BillActivity[]> => {
+    try {
+      const result = await storage.getBillActivities(billId);
+      return result;
+    } catch (error) {
+      console.log('Error getting activities:', error);
+      return [];
+    }
+  };
+
+  const updateNotificationPreferences = async (prefs: NotificationPreference) => {
+    try {
+      await storage.saveNotificationPreferences(prefs);
+      setNotificationPreferences(prefs);
+    } catch (error) {
+      console.log('Error updating notification preferences:', error);
+      throw error;
+    }
+  };
+
   return (
     <BillContext.Provider
       value={{
@@ -159,6 +237,10 @@ export const BillProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         acceptConnection,
         disconnect,
         isLoading,
+        activities,
+        getActivities,
+        notificationPreferences,
+        updateNotificationPreferences,
       }}
     >
       {children}

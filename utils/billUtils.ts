@@ -44,6 +44,17 @@ export const formatDate = (dateString: string): string => {
   });
 };
 
+export const formatDateTime = (dateString: string): string => {
+  const date = new Date(dateString);
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+};
+
 export const formatCurrency = (amount: number): string => {
   return `$${amount.toFixed(2)}`;
 };
@@ -63,4 +74,30 @@ export const getFrequencyLabel = (frequency: string): string => {
 
 export const generateId = (): string => {
   return Math.random().toString(36).substring(2, 11);
+};
+
+export const getDaysUntilDue = (dueDate: string): number => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  const due = new Date(dueDate);
+  due.setHours(0, 0, 0, 0);
+  
+  const diffTime = due.getTime() - today.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  
+  return diffDays;
+};
+
+export const calculateUserAmount = (bill: Bill, userPercentage: number): number => {
+  return (bill.amount * userPercentage) / 100;
+};
+
+export const shouldNotifyForBill = (bill: Bill, daysBeforeDue: number[]): boolean => {
+  const daysUntil = getDaysUntilDue(bill.dueDate);
+  return daysBeforeDue.includes(daysUntil);
+};
+
+export const isOverdue = (bill: Bill): boolean => {
+  return getDaysUntilDue(bill.dueDate) < 0 && !bill.paidByUser1 && !bill.paidByUser2;
 };

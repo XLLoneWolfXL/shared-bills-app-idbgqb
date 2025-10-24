@@ -6,6 +6,8 @@ import { generateId } from './billUtils';
 // User operations
 export const createUserProfile = async (userId: string, name: string, email: string) => {
   try {
+    console.log('Creating user profile for:', userId, name, email);
+    
     const { data, error } = await supabase
       .from('users')
       .insert([
@@ -18,7 +20,12 @@ export const createUserProfile = async (userId: string, name: string, email: str
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.log('Error creating user profile - error details:', error);
+      throw error;
+    }
+    
+    console.log('User profile created successfully:', data);
     return data;
   } catch (error) {
     console.log('Error creating user profile:', error);

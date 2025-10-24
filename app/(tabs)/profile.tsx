@@ -1,12 +1,12 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, Platform, useColorScheme, Pressable, Alert, TextInput, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { IconSymbol } from '@/components/IconSymbol';
 import { useBillContext } from '@/contexts/BillContext';
 import { colors } from '@/styles/commonStyles';
 import { User } from '@/types/bill';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { supabase } from '@/app/integrations/supabase/client';
 
 export default function ProfileScreen() {
@@ -34,8 +34,18 @@ export default function ProfileScreen() {
   useEffect(() => {
     if (currentUser) {
       setEditedName(currentUser.name);
+      console.log('Profile screen - currentUser updated:', currentUser);
+    } else {
+      console.log('Profile screen - no currentUser');
     }
   }, [currentUser]);
+
+  // Refresh profile when screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      console.log('Profile screen focused - currentUser:', currentUser);
+    }, [currentUser])
+  );
 
   const handleSaveName = async () => {
     if (!editedName.trim()) {
@@ -157,7 +167,10 @@ export default function ProfileScreen() {
     ]);
   };
 
+  console.log('Profile screen render - currentUser:', currentUser);
+  
   if (!currentUser) {
+    console.log('Showing profile creation screen');
     return (
       <SafeAreaView
         style={[
@@ -203,7 +216,10 @@ export default function ProfileScreen() {
                 }
                 try {
                   setIsLoading(true);
+                  console.log('Create profile button pressed');
+                  
                   const { data: { user: authUser } } = await supabase.auth.getUser();
+                  console.log('Auth user:', authUser?.id);
                   
                   if (!authUser) {
                     Alert.alert('Error', 'You must be logged in to create a profile');
@@ -215,11 +231,19 @@ export default function ProfileScreen() {
                     name: editedName.trim(),
                     email: authUser.email,
                   };
+                  
+                  console.log('Calling setCurrentUser with:', newUser);
                   await setCurrentUser(newUser);
+                  console.log('Profile created successfully');
                   Alert.alert('Success', 'Profile created successfully!');
+                  
+                  // Force a small delay to ensure state updates
+                  await new Promise(resolve => setTimeout(resolve, 500));
                 } catch (error) {
                   console.log('Error creating profile:', error);
-                  Alert.alert('Error', 'Failed to create profile. Please try again.');
+                  console.log('Error details:', JSON.stringify(error, null, 2));
+                  const errorMessage = error instanceof Error ? error.message : 'Failed to create profile. Please try again.';
+                  Alert.alert('Error', errorMessage);
                 } finally {
                   setIsLoading(false);
                 }

@@ -43,15 +43,20 @@ export const BillProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const { data: { user: authUser } } = await supabase.auth.getUser();
         
         if (authUser) {
+          console.log('Auth user found:', authUser.id);
+          
           // Get or create user profile
           let userProfile = await supabaseService.getUserProfile(authUser.id);
+          console.log('User profile:', userProfile);
           
           if (!userProfile) {
+            console.log('Creating new user profile...');
             userProfile = await supabaseService.createUserProfile(
               authUser.id,
               authUser.user_metadata?.name || authUser.email?.split('@')[0] || 'User',
               authUser.email || ''
             );
+            console.log('User profile created:', userProfile);
           }
 
           const user: User = {
@@ -134,10 +139,22 @@ export const BillProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const setCurrentUser = async (user: User) => {
     try {
       const { data: { user: authUser } } = await supabase.auth.getUser();
-      if (authUser) {
-        await supabaseService.updateUserProfile(authUser.id, user);
-        setCurrentUserState(user);
+      if (!authUser) {
+        throw new Error('No authenticated user found');
       }
+
+      // Check if user profile exists
+      const existingProfile = await supabaseService.getUserProfile(authUser.id);
+      
+      if (existingProfile) {
+        // Update existing profile
+        await supabaseService.updateUserProfile(authUser.id, user);
+      } else {
+        // Create new profile
+        await supabaseService.createUserProfile(authUser.id, user.name, user.email || '');
+      }
+      
+      setCurrentUserState(user);
     } catch (error) {
       console.log('Error setting current user:', error);
       throw error;

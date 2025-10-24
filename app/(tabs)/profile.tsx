@@ -7,6 +7,7 @@ import { useBillContext } from '@/contexts/BillContext';
 import { colors } from '@/styles/commonStyles';
 import { User } from '@/types/bill';
 import { useRouter } from 'expo-router';
+import { supabase } from '@/app/integrations/supabase/client';
 
 export default function ProfileScreen() {
   const colorScheme = useColorScheme();
@@ -45,15 +46,19 @@ export default function ProfileScreen() {
     if (!currentUser) return;
 
     try {
+      setIsLoading(true);
       const updatedUser: User = {
         ...currentUser,
         name: editedName.trim(),
       };
       await setCurrentUser(updatedUser);
       setIsEditingName(false);
+      Alert.alert('Success', 'Name updated successfully');
     } catch (error) {
       console.log('Error saving name:', error);
-      Alert.alert('Error', 'Failed to save name');
+      Alert.alert('Error', 'Failed to save name. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -79,7 +84,7 @@ export default function ProfileScreen() {
 
     try {
       setIsLoading(true);
-      const success = await connectWithCode(connectionCode.toUpperCase(), currentUser?.name || 'User');
+      const success = await connectWithCode(connectionCode.toUpperCase());
       if (success) {
         Alert.alert('Success', 'Connection request sent! Waiting for the other user to accept.');
         setConnectionCode('');
@@ -130,6 +135,28 @@ export default function ProfileScreen() {
     ]);
   };
 
+  const handleLogout = () => {
+    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
+      { text: 'Cancel', onPress: () => console.log('Cancel') },
+      {
+        text: 'Sign Out',
+        onPress: async () => {
+          try {
+            setIsLoading(true);
+            await supabase.auth.signOut();
+            Alert.alert('Success', 'Signed out successfully');
+          } catch (error) {
+            console.log('Error signing out:', error);
+            Alert.alert('Error', 'Failed to sign out');
+          } finally {
+            setIsLoading(false);
+          }
+        },
+        style: 'destructive',
+      },
+    ]);
+  };
+
   if (!currentUser) {
     return (
       <SafeAreaView
@@ -168,20 +195,40 @@ export default function ProfileScreen() {
             />
 
             <Pressable
-              style={[styles.setupButton, { backgroundColor: colors.primary }]}
+              style={[styles.setupButton, { backgroundColor: colors.primary, opacity: isLoading ? 0.6 : 1 }]}
               onPress={async () => {
                 if (!editedName.trim()) {
                   Alert.alert('Error', 'Please enter your name');
                   return;
                 }
-                const newUser: User = {
-                  id: Math.random().toString(36).substring(2, 11),
-                  name: editedName.trim(),
-                };
-                await setCurrentUser(newUser);
+                try {
+                  setIsLoading(true);
+                  const { data: { user: authUser } } = await supabase.auth.getUser();
+                  
+                  if (!authUser) {
+                    Alert.alert('Error', 'You must be logged in to create a profile');
+                    return;
+                  }
+
+                  const newUser: User = {
+                    id: authUser.id,
+                    name: editedName.trim(),
+                    email: authUser.email,
+                  };
+                  await setCurrentUser(newUser);
+                  Alert.alert('Success', 'Profile created successfully!');
+                } catch (error) {
+                  console.log('Error creating profile:', error);
+                  Alert.alert('Error', 'Failed to create profile. Please try again.');
+                } finally {
+                  setIsLoading(false);
+                }
               }}
+              disabled={isLoading}
             >
-              <Text style={styles.setupButtonText}>Create Profile</Text>
+              <Text style={styles.setupButtonText}>
+                {isLoading ? 'Creating...' : 'Create Profile'}
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -254,6 +301,20 @@ export default function ProfileScreen() {
               </Text>
             </View>
           </View>
+        </View>
+
+        {/* Logout Section */}
+        <View style={styles.section}>
+          <Pressable
+            style={[styles.logoutButton, { borderColor: colors.due, opacity: isLoading ? 0.6 : 1 }]}
+            onPress={handleLogout}
+            disabled={isLoading}
+          >
+            <IconSymbol name="arrow.right.circle" size={20} color={colors.due} />
+            <Text style={[styles.logoutButtonText, { color: colors.due }]}>
+              Sign Out
+            </Text>
+          </Pressable>
         </View>
 
         {/* Connection Section */}
@@ -638,6 +699,19 @@ const styles = StyleSheet.create({
   },
   submitCodeButtonText: {
     color: colors.card,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  logoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 8,
+  },
+  logoutButtonText: {
     fontSize: 14,
     fontWeight: '600',
   },

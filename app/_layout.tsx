@@ -1,6 +1,6 @@
 
 import "react-native-reanimated";
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { useFonts } from "expo-font";
 import { Stack, router } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
@@ -17,6 +17,8 @@ import {
 import { StatusBar } from "expo-status-bar";
 import { WidgetProvider } from "@/contexts/WidgetContext";
 import { BillProvider } from "@/contexts/BillContext";
+import { supabase } from "@/app/integrations/supabase/client";
+
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -31,12 +33,37 @@ export default function RootLayout() {
   const [loaded] = useFonts({
     SpaceMono: require("../assets/fonts/SpaceMono-Regular.ttf"),
   });
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authLoaded, setAuthLoaded] = useState(false);
 
   useEffect(() => {
-    if (loaded) {
+    const checkAuth = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        setIsAuthenticated(!!user);
+        console.log('Auth check - user:', user?.id);
+      } catch (error) {
+        console.log('Auth check error:', error);
+      } finally {
+        setAuthLoaded(true);
+      }
+    };
+
+    checkAuth();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsAuthenticated(!!session?.user);
+      console.log('Auth state changed - authenticated:', !!session?.user);
+    });
+
+    return () => subscription?.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (loaded && authLoaded) {
       SplashScreen.hideAsync();
     }
-  }, [loaded]);
+  }, [loaded, authLoaded]);
 
   React.useEffect(() => {
     if (
@@ -50,7 +77,7 @@ export default function RootLayout() {
     }
   }, [networkState.isConnected, networkState.isInternetReachable]);
 
-  if (!loaded) {
+  if (!loaded || !authLoaded) {
     return null;
   }
 
@@ -88,34 +115,43 @@ export default function RootLayout() {
           <BillProvider>
             <GestureHandlerRootView>
               <Stack>
-                {/* Main app with tabs */}
-                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                {isAuthenticated ? (
+                  <>
+                    {/* Main app with tabs */}
+                    <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
 
-                {/* Modal Demo Screens */}
-                <Stack.Screen
-                  name="modal"
-                  options={{
-                    presentation: "modal",
-                    title: "Standard Modal",
-                  }}
-                />
-                <Stack.Screen
-                  name="formsheet"
-                  options={{
-                    presentation: "formSheet",
-                    title: "Form Sheet Modal",
-                    sheetGrabberVisible: true,
-                    sheetAllowedDetents: [0.5, 0.8, 1.0],
-                    sheetCornerRadius: 20,
-                  }}
-                />
-                <Stack.Screen
-                  name="transparent-modal"
-                  options={{
-                    presentation: "transparentModal",
-                    headerShown: false,
-                  }}
-                />
+                    {/* Modal Demo Screens */}
+                    <Stack.Screen
+                      name="modal"
+                      options={{
+                        presentation: "modal",
+                        title: "Standard Modal",
+                      }}
+                    />
+                    <Stack.Screen
+                      name="formsheet"
+                      options={{
+                        presentation: "formSheet",
+                        title: "Form Sheet Modal",
+                        sheetGrabberVisible: true,
+                        sheetAllowedDetents: [0.5, 0.8, 1.0],
+                        sheetCornerRadius: 20,
+                      }}
+                    />
+                    <Stack.Screen
+                      name="transparent-modal"
+                      options={{
+                        presentation: "transparentModal",
+                        headerShown: false,
+                      }}
+                    />
+                  </>
+                ) : (
+                  <>
+                    {/* Auth screens */}
+                    <Stack.Screen name="formsheet" options={{ headerShown: false }} />
+                  </>
+                )}
               </Stack>
               <SystemBars style={"auto"} />
             </GestureHandlerRootView>

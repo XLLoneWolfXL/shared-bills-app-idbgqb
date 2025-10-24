@@ -1,8 +1,9 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Bill, User, SharedConnection, BillActivity, NotificationPreference } from '@/types/bill';
-import * as storage from '@/utils/storage';
 import { generateId } from '@/utils/billUtils';
+import * as supabaseService from '@/utils/supabaseService';
+import { supabase } from '@/app/integrations/supabase/client';
 
 interface BillContextType {
   currentUser: User | null;
@@ -13,7 +14,7 @@ interface BillContextType {
   deleteBill: (billId: string) => Promise<void>;
   sharedConnection: SharedConnection | null;
   generateCode: () => Promise<string>;
-  connectWithCode: (code: string, userName: string) => Promise<boolean>;
+  connectWithCode: (code: string) => Promise<boolean>;
   acceptConnection: () => Promise<void>;
   disconnect: () => Promise<void>;
   isLoading: boolean;
@@ -21,12 +22,14 @@ interface BillContextType {
   getActivities: (billId?: string) => Promise<BillActivity[]>;
   notificationPreferences: NotificationPreference | null;
   updateNotificationPreferences: (prefs: NotificationPreference) => Promise<void>;
+  connectedUser: User | null;
 }
 
 const BillContext = createContext<BillContextType | undefined>(undefined);
 
 export const BillProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUserState] = useState<User | null>(null);
+  const [connectedUser, setConnectedUser] = useState<User | null>(null);
   const [bills, setBills] = useState<Bill[]>([]);
   const [sharedConnection, setSharedConnection] = useState<SharedConnection | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -37,17 +40,86 @@ export const BillProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   useEffect(() => {
     const initialize = async () => {
       try {
-        const user = await storage.getCurrentUser();
-        if (user) {
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        
+        if (authUser) {
+          // Get or create user profile
+          let userProfile = await supabaseService.getUserProfile(authUser.id);
+          
+          if (!userProfile) {
+            userProfile = await supabaseService.createUserProfile(
+              authUser.id,
+              authUser.user_metadata?.name || authUser.email?.split('@')[0] || 'User',
+              authUser.email || ''
+            );
+          }
+
+          const user: User = {
+            id: authUser.id,
+            name: userProfile?.name || 'User',
+            email: authUser.email,
+          };
+
           setCurrentUserState(user);
-          const connection = await storage.getSharedConnection(user.id);
-          setSharedConnection(connection);
-          const billsList = await storage.getBills();
-          setBills(billsList);
-          const allActivities = await storage.getAllActivities();
-          setActivities(allActivities);
-          const prefs = await storage.getNotificationPreferences(user.id);
-          setNotificationPreferences(prefs);
+
+          // Get shared connection
+          const connection = await supabaseService.getSharedConnection(authUser.id);
+          if (connection) {
+            setSharedConnection(connection);
+            
+            // Get connected user info
+            const connectedUserId = connection.user_id_1 === authUser.id ? connection.user_id_2 : connection.user_id_1;
+            const connectedUserProfile = await supabaseService.getUserProfile(connectedUserId);
+            if (connectedUserProfile) {
+              setConnectedUser({
+                id: connectedUserId,
+                name: connectedUserProfile.name,
+                email: connectedUserProfile.email,
+              });
+            }
+          }
+
+          // Get bills
+          const billsList = await supabaseService.getBills(authUser.id, connection?.id);
+          const formattedBills = billsList.map((bill: any) => ({
+            id: bill.id,
+            name: bill.name,
+            amount: bill.amount,
+            dueDate: bill.due_date,
+            frequency: bill.frequency,
+            notes: bill.notes,
+            createdAt: bill.created_at,
+            createdBy: bill.created_by,
+            paidByUser1: bill.paid_by_user_1,
+            paidByUser2: bill.paid_by_user_2,
+          }));
+          setBills(formattedBills);
+
+          // Get activities
+          const activitiesList = await supabaseService.getBillActivities();
+          const formattedActivities = activitiesList.map((activity: any) => ({
+            id: activity.id,
+            billId: activity.bill_id,
+            type: activity.action,
+            userId: activity.user_id,
+            userName: activity.details?.userName || 'Unknown',
+            description: activity.details?.description || '',
+            timestamp: activity.created_at,
+            metadata: activity.details?.metadata,
+          }));
+          setActivities(formattedActivities);
+
+          // Get notification preferences
+          const prefs = await supabaseService.getNotificationPreferences(authUser.id);
+          if (prefs) {
+            setNotificationPreferences({
+              userId: authUser.id,
+              daysBeforeDue: [prefs.reminder_days_before],
+              notifyOnPaid: prefs.notify_on_paid,
+              notifyOnOverdue: prefs.notify_on_overdue,
+              enabled: true,
+            });
+          }
         }
       } catch (error) {
         console.log('Error initializing:', error);
@@ -61,9 +133,11 @@ export const BillProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const setCurrentUser = async (user: User) => {
     try {
-      await storage.setCurrentUser(user);
-      await storage.saveUser(user);
-      setCurrentUserState(user);
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (authUser) {
+        await supabaseService.updateUserProfile(authUser.id, user);
+        setCurrentUserState(user);
+      }
     } catch (error) {
       console.log('Error setting current user:', error);
       throw error;
@@ -72,20 +146,37 @@ export const BillProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const addBill = async (bill: Bill) => {
     try {
-      await storage.saveBill(bill);
-      setBills([...bills, bill]);
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) throw new Error('No authenticated user');
+
+      const createdBill = await supabaseService.createBill(bill, authUser.id, sharedConnection?.id);
       
+      const formattedBill: Bill = {
+        id: createdBill.id,
+        name: createdBill.name,
+        amount: createdBill.amount,
+        dueDate: createdBill.due_date,
+        frequency: createdBill.frequency,
+        notes: createdBill.notes,
+        createdAt: createdBill.created_at,
+        createdBy: createdBill.created_by,
+        paidByUser1: createdBill.paid_by_user_1,
+        paidByUser2: createdBill.paid_by_user_2,
+      };
+
+      setBills([...bills, formattedBill]);
+
       // Log activity
       const activity: BillActivity = {
         id: generateId(),
-        billId: bill.id,
+        billId: createdBill.id,
         type: 'created',
-        userId: currentUser?.id || '',
+        userId: authUser.id,
         userName: currentUser?.name || 'Unknown',
         description: `Created bill "${bill.name}" for $${bill.amount.toFixed(2)}`,
         timestamp: new Date().toISOString(),
       };
-      await storage.addBillActivity(activity);
+      await supabaseService.addBillActivity(activity);
       setActivities([activity, ...activities]);
     } catch (error) {
       console.log('Error adding bill:', error);
@@ -95,10 +186,13 @@ export const BillProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const updateBill = async (bill: Bill) => {
     try {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) throw new Error('No authenticated user');
+
       const oldBill = bills.find(b => b.id === bill.id);
-      await storage.saveBill(bill);
+      await supabaseService.updateBill(bill.id, bill);
       setBills(bills.map(b => b.id === bill.id ? bill : b));
-      
+
       // Log activity for payment status changes
       if (oldBill) {
         if (oldBill.paidByUser1 !== bill.paidByUser1 || oldBill.paidByUser2 !== bill.paidByUser2) {
@@ -106,12 +200,12 @@ export const BillProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             id: generateId(),
             billId: bill.id,
             type: bill.paidByUser1 && bill.paidByUser2 ? 'paid' : 'unpaid',
-            userId: currentUser?.id || '',
+            userId: authUser.id,
             userName: currentUser?.name || 'Unknown',
             description: `Marked bill "${bill.name}" as ${bill.paidByUser1 && bill.paidByUser2 ? 'paid' : 'unpaid'}`,
             timestamp: new Date().toISOString(),
           };
-          await storage.addBillActivity(activity);
+          await supabaseService.addBillActivity(activity);
           setActivities([activity, ...activities]);
         }
       }
@@ -123,22 +217,25 @@ export const BillProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const deleteBill = async (billId: string) => {
     try {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) throw new Error('No authenticated user');
+
       const bill = bills.find(b => b.id === billId);
-      await storage.deleteBill(billId);
+      await supabaseService.deleteBill(billId);
       setBills(bills.filter(b => b.id !== billId));
-      
+
       // Log activity
       if (bill) {
         const activity: BillActivity = {
           id: generateId(),
           billId: billId,
           type: 'deleted',
-          userId: currentUser?.id || '',
+          userId: authUser.id,
           userName: currentUser?.name || 'Unknown',
           description: `Deleted bill "${bill.name}"`,
           timestamp: new Date().toISOString(),
         };
-        await storage.addBillActivity(activity);
+        await supabaseService.addBillActivity(activity);
         setActivities([activity, ...activities]);
       }
     } catch (error) {
@@ -149,8 +246,10 @@ export const BillProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const generateCode = async (): Promise<string> => {
     try {
-      if (!currentUser) throw new Error('No current user');
-      const code = await storage.generateConnectionCode(currentUser.id);
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) throw new Error('No authenticated user');
+
+      const code = await supabaseService.generateConnectionCode(authUser.id);
       return code;
     } catch (error) {
       console.log('Error generating code:', error);
@@ -158,19 +257,30 @@ export const BillProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  const connectWithCode = async (code: string, userName: string): Promise<boolean> => {
+  const connectWithCode = async (code: string): Promise<boolean> => {
     try {
-      if (!currentUser) throw new Error('No current user');
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) throw new Error('No authenticated user');
 
-      const validCode = await storage.validateConnectionCode(code);
+      const validCode = await supabaseService.validateConnectionCode(code);
       if (!validCode) return false;
 
       // Mark code as used
-      await storage.markCodeAsUsed(code, currentUser.id);
+      await supabaseService.markCodeAsUsed(code, authUser.id);
 
       // Create shared connection
-      const connection = await storage.createSharedConnection(validCode.createdBy, currentUser.id);
+      const connection = await supabaseService.createSharedConnection(validCode.created_by, authUser.id);
       setSharedConnection(connection);
+
+      // Get connected user info
+      const connectedUserProfile = await supabaseService.getUserProfile(validCode.created_by);
+      if (connectedUserProfile) {
+        setConnectedUser({
+          id: validCode.created_by,
+          name: connectedUserProfile.name,
+          email: connectedUserProfile.email,
+        });
+      }
 
       return true;
     } catch (error) {
@@ -181,9 +291,11 @@ export const BillProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const acceptConnection = async () => {
     try {
-      if (!currentUser || !sharedConnection) throw new Error('Missing data');
-      await storage.acceptConnection(sharedConnection.id, currentUser.id);
-      const updated = await storage.getSharedConnection(currentUser.id);
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser || !sharedConnection) throw new Error('Missing data');
+
+      await supabaseService.acceptConnection(sharedConnection.id, authUser.id);
+      const updated = await supabaseService.getSharedConnection(authUser.id);
       setSharedConnection(updated);
     } catch (error) {
       console.log('Error accepting connection:', error);
@@ -193,9 +305,12 @@ export const BillProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const disconnect = async () => {
     try {
-      if (!currentUser) throw new Error('No current user');
-      await storage.disconnectUsers(currentUser.id);
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) throw new Error('No authenticated user');
+
+      await supabaseService.disconnectUsers(authUser.id);
       setSharedConnection(null);
+      setConnectedUser(null);
     } catch (error) {
       console.log('Error disconnecting:', error);
       throw error;
@@ -204,8 +319,17 @@ export const BillProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const getActivities = async (billId?: string): Promise<BillActivity[]> => {
     try {
-      const result = await storage.getBillActivities(billId);
-      return result;
+      const result = await supabaseService.getBillActivities(billId);
+      return result.map((activity: any) => ({
+        id: activity.id,
+        billId: activity.bill_id,
+        type: activity.action,
+        userId: activity.user_id,
+        userName: activity.details?.userName || 'Unknown',
+        description: activity.details?.description || '',
+        timestamp: activity.created_at,
+        metadata: activity.details?.metadata,
+      }));
     } catch (error) {
       console.log('Error getting activities:', error);
       return [];
@@ -214,7 +338,10 @@ export const BillProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const updateNotificationPreferences = async (prefs: NotificationPreference) => {
     try {
-      await storage.saveNotificationPreferences(prefs);
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) throw new Error('No authenticated user');
+
+      await supabaseService.saveNotificationPreferences(authUser.id, prefs);
       setNotificationPreferences(prefs);
     } catch (error) {
       console.log('Error updating notification preferences:', error);
@@ -241,6 +368,7 @@ export const BillProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         getActivities,
         notificationPreferences,
         updateNotificationPreferences,
+        connectedUser,
       }}
     >
       {children}

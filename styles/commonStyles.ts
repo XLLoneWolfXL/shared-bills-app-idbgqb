@@ -1,14 +1,17 @@
 import { StyleSheet, ViewStyle, TextStyle } from 'react-native';
 
 export const colors = {
-  primary: '#162456',    // Material Blue
-  secondary: '#193cb8',  // Darker Blue
-  accent: '#64B5F6',     // Light Blue
-  background: '#101824',  // Keeping dark background
-  backgroundAlt: '#162133',  // Keeping dark background
-  text: '#e3e3e3',       // Keeping light text
-  grey: '#90CAF9',       // Light Blue Grey
-  card: '#193cb8',       // Keeping dark card background
+  background: '#F5F5F5',      // Light gray
+  text: '#333333',            // Dark gray
+  textSecondary: '#666666',   // Medium gray
+  primary: '#007BFF',         // Blue - for main actions
+  secondary: '#6C757D',       // Gray - for secondary actions
+  accent: '#FFC107',          // Yellow - for upcoming bills
+  card: '#FFFFFF',            // White
+  highlight: '#28A745',       // Green - for paid bills
+  due: '#DC3545',             // Red - for due bills
+  dark: '#1a1a1a',            // Dark background for dark mode
+  darkCard: '#2d2d2d',        // Dark card for dark mode
 };
 
 export const buttonStyles = StyleSheet.create({

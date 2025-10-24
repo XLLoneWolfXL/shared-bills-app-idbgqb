@@ -1,91 +1,644 @@
-import React from "react";
-import { View, Text, StyleSheet, ScrollView, Platform } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { IconSymbol } from "@/components/IconSymbol";
-import { GlassView } from "expo-glass-effect";
-import { useTheme } from "@react-navigation/native";
+
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, Platform, useColorScheme, Pressable, Alert, TextInput, ActivityIndicator } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { IconSymbol } from '@/components/IconSymbol';
+import { useBillContext } from '@/contexts/BillContext';
+import { colors } from '@/styles/commonStyles';
+import { User } from '@/types/bill';
+import { useRouter } from 'expo-router';
 
 export default function ProfileScreen() {
-  const theme = useTheme();
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  const router = useRouter();
+  const {
+    currentUser,
+    setCurrentUser,
+    sharedConnection,
+    generateCode,
+    connectWithCode,
+    acceptConnection,
+    disconnect,
+  } = useBillContext();
+
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editedName, setEditedName] = useState(currentUser?.name || '');
+  const [showCodeInput, setShowCodeInput] = useState(false);
+  const [connectionCode, setConnectionCode] = useState('');
+  const [generatedCode, setGeneratedCode] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [showCodeDisplay, setShowCodeDisplay] = useState(false);
+
+  useEffect(() => {
+    if (currentUser) {
+      setEditedName(currentUser.name);
+    }
+  }, [currentUser]);
+
+  const handleSaveName = async () => {
+    if (!editedName.trim()) {
+      Alert.alert('Error', 'Name cannot be empty');
+      return;
+    }
+
+    if (!currentUser) return;
+
+    try {
+      const updatedUser: User = {
+        ...currentUser,
+        name: editedName.trim(),
+      };
+      await setCurrentUser(updatedUser);
+      setIsEditingName(false);
+    } catch (error) {
+      console.log('Error saving name:', error);
+      Alert.alert('Error', 'Failed to save name');
+    }
+  };
+
+  const handleGenerateCode = async () => {
+    try {
+      setIsLoading(true);
+      const code = await generateCode();
+      setGeneratedCode(code);
+      setShowCodeDisplay(true);
+    } catch (error) {
+      console.log('Error generating code:', error);
+      Alert.alert('Error', 'Failed to generate code');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleConnectWithCode = async () => {
+    if (!connectionCode.trim()) {
+      Alert.alert('Error', 'Please enter a code');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      const success = await connectWithCode(connectionCode.toUpperCase(), currentUser?.name || 'User');
+      if (success) {
+        Alert.alert('Success', 'Connection request sent! Waiting for the other user to accept.');
+        setConnectionCode('');
+        setShowCodeInput(false);
+      } else {
+        Alert.alert('Error', 'Invalid or expired code');
+      }
+    } catch (error) {
+      console.log('Error connecting:', error);
+      Alert.alert('Error', 'Failed to connect');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleAcceptConnection = async () => {
+    try {
+      setIsLoading(true);
+      await acceptConnection();
+      Alert.alert('Success', 'Connection accepted!');
+    } catch (error) {
+      console.log('Error accepting connection:', error);
+      Alert.alert('Error', 'Failed to accept connection');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDisconnect = () => {
+    Alert.alert('Disconnect', 'Are you sure you want to disconnect? Your bills will remain private.', [
+      { text: 'Cancel', onPress: () => console.log('Cancel') },
+      {
+        text: 'Disconnect',
+        onPress: async () => {
+          try {
+            setIsLoading(true);
+            await disconnect();
+            Alert.alert('Success', 'Disconnected successfully');
+          } catch (error) {
+            console.log('Error disconnecting:', error);
+            Alert.alert('Error', 'Failed to disconnect');
+          } finally {
+            setIsLoading(false);
+          }
+        },
+        style: 'destructive',
+      },
+    ]);
+  };
+
+  if (!currentUser) {
+    return (
+      <SafeAreaView
+        style={[
+          styles.container,
+          { backgroundColor: isDark ? colors.dark : colors.background },
+        ]}
+        edges={['top']}
+      >
+        <View style={styles.setupContainer}>
+          <IconSymbol name="person.crop.circle.badge.exclamationmark" size={48} color={colors.primary} />
+          <Text style={[styles.setupTitle, { color: isDark ? colors.card : colors.text }]}>
+            Set Up Your Profile
+          </Text>
+          <Text style={[styles.setupText, { color: colors.textSecondary }]}>
+            Create your profile to start tracking bills
+          </Text>
+
+          <View style={styles.setupForm}>
+            <Text style={[styles.label, { color: isDark ? colors.card : colors.text }]}>
+              Your Name
+            </Text>
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  backgroundColor: isDark ? colors.darkCard : colors.card,
+                  color: isDark ? colors.card : colors.text,
+                  borderColor: colors.primary,
+                },
+              ]}
+              placeholder="Enter your name"
+              placeholderTextColor={colors.textSecondary}
+              value={editedName}
+              onChangeText={setEditedName}
+            />
+
+            <Pressable
+              style={[styles.setupButton, { backgroundColor: colors.primary }]}
+              onPress={async () => {
+                if (!editedName.trim()) {
+                  Alert.alert('Error', 'Please enter your name');
+                  return;
+                }
+                const newUser: User = {
+                  id: Math.random().toString(36).substring(2, 11),
+                  name: editedName.trim(),
+                };
+                await setCurrentUser(newUser);
+              }}
+            >
+              <Text style={styles.setupButtonText}>Create Profile</Text>
+            </Pressable>
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.colors.background }]} edges={['top']}>
+    <SafeAreaView
+      style={[
+        styles.container,
+        { backgroundColor: isDark ? colors.dark : colors.background },
+      ]}
+      edges={['top']}
+    >
       <ScrollView
-        style={styles.container}
         contentContainerStyle={[
-          styles.contentContainer,
-          Platform.OS !== 'ios' && styles.contentContainerWithTabBar
+          styles.scrollContent,
+          Platform.OS !== 'ios' && styles.scrollContentWithTabBar,
         ]}
+        showsVerticalScrollIndicator={false}
       >
-        <GlassView style={[
-          styles.profileHeader,
-          Platform.OS !== 'ios' && { backgroundColor: theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }
-        ]} glassEffectStyle="regular">
-          <IconSymbol name="person.circle.fill" size={80} color={theme.colors.primary} />
-          <Text style={[styles.name, { color: theme.colors.text }]}>John Doe</Text>
-          <Text style={[styles.email, { color: theme.dark ? '#98989D' : '#666' }]}>john.doe@example.com</Text>
-        </GlassView>
+        {/* Profile Section */}
+        <View
+          style={[
+            styles.card,
+            {
+              backgroundColor: isDark ? colors.darkCard : colors.card,
+            },
+          ]}
+        >
+          <View style={styles.profileHeader}>
+            <IconSymbol name="person.circle.fill" size={64} color={colors.primary} />
+            <View style={styles.profileInfo}>
+              {isEditingName ? (
+                <View style={styles.editNameContainer}>
+                  <TextInput
+                    style={[
+                      styles.nameInput,
+                      {
+                        backgroundColor: isDark ? colors.dark : colors.background,
+                        color: isDark ? colors.card : colors.text,
+                        borderColor: colors.primary,
+                      },
+                    ]}
+                    value={editedName}
+                    onChangeText={setEditedName}
+                    autoFocus
+                  />
+                  <Pressable
+                    style={styles.saveNameButton}
+                    onPress={handleSaveName}
+                  >
+                    <IconSymbol name="checkmark" size={20} color={colors.highlight} />
+                  </Pressable>
+                </View>
+              ) : (
+                <Pressable
+                  style={styles.nameContainer}
+                  onPress={() => setIsEditingName(true)}
+                >
+                  <Text style={[styles.name, { color: isDark ? colors.card : colors.text }]}>
+                    {currentUser.name}
+                  </Text>
+                  <IconSymbol name="pencil" size={16} color={colors.primary} />
+                </Pressable>
+              )}
+              <Text style={[styles.userId, { color: colors.textSecondary }]}>
+                ID: {currentUser.id.substring(0, 8)}
+              </Text>
+            </View>
+          </View>
+        </View>
 
-        <GlassView style={[
-          styles.section,
-          Platform.OS !== 'ios' && { backgroundColor: theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }
-        ]} glassEffectStyle="regular">
-          <View style={styles.infoRow}>
-            <IconSymbol name="phone.fill" size={20} color={theme.dark ? '#98989D' : '#666'} />
-            <Text style={[styles.infoText, { color: theme.colors.text }]}>+1 (555) 123-4567</Text>
-          </View>
-          <View style={styles.infoRow}>
-            <IconSymbol name="location.fill" size={20} color={theme.dark ? '#98989D' : '#666'} />
-            <Text style={[styles.infoText, { color: theme.colors.text }]}>San Francisco, CA</Text>
-          </View>
-        </GlassView>
+        {/* Connection Section */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: isDark ? colors.card : colors.text }]}>
+            Shared Bills
+          </Text>
+
+          {sharedConnection ? (
+            <View
+              style={[
+                styles.card,
+                {
+                  backgroundColor: isDark ? colors.darkCard : colors.card,
+                },
+              ]}
+            >
+              <View style={styles.connectionStatus}>
+                <IconSymbol
+                  name={
+                    sharedConnection.user1Accepted && sharedConnection.user2Accepted
+                      ? 'checkmark.circle.fill'
+                      : 'clock.fill'
+                  }
+                  size={24}
+                  color={
+                    sharedConnection.user1Accepted && sharedConnection.user2Accepted
+                      ? colors.highlight
+                      : colors.accent
+                  }
+                />
+                <View style={styles.connectionInfo}>
+                  <Text style={[styles.connectionTitle, { color: isDark ? colors.card : colors.text }]}>
+                    {sharedConnection.user1Accepted && sharedConnection.user2Accepted
+                      ? 'Connected'
+                      : 'Pending Acceptance'}
+                  </Text>
+                  <Text style={[styles.connectionSubtitle, { color: colors.textSecondary }]}>
+                    {sharedConnection.user1Accepted && sharedConnection.user2Accepted
+                      ? 'Both users have accepted'
+                      : 'Waiting for other user to accept'}
+                  </Text>
+                </View>
+              </View>
+
+              {!sharedConnection.user1Accepted || !sharedConnection.user2Accepted ? (
+                <Pressable
+                  style={[styles.acceptButton, { backgroundColor: colors.primary, opacity: isLoading ? 0.6 : 1 }]}
+                  onPress={handleAcceptConnection}
+                  disabled={isLoading}
+                >
+                  <Text style={styles.acceptButtonText}>
+                    {isLoading ? 'Accepting...' : 'Accept Connection'}
+                  </Text>
+                </Pressable>
+              ) : null}
+
+              <Pressable
+                style={[styles.disconnectButton, { borderColor: colors.due, opacity: isLoading ? 0.6 : 1 }]}
+                onPress={handleDisconnect}
+                disabled={isLoading}
+              >
+                <Text style={[styles.disconnectButtonText, { color: colors.due }]}>
+                  Disconnect
+                </Text>
+              </Pressable>
+            </View>
+          ) : (
+            <View
+              style={[
+                styles.card,
+                {
+                  backgroundColor: isDark ? colors.darkCard : colors.card,
+                },
+              ]}
+            >
+              <Text style={[styles.noConnectionText, { color: colors.textSecondary }]}>
+                Not connected yet. Generate or enter a code to share bills with another user.
+              </Text>
+
+              <View style={styles.connectionButtonsContainer}>
+                <Pressable
+                  style={[styles.connectionButton, { backgroundColor: colors.primary, opacity: isLoading ? 0.6 : 1 }]}
+                  onPress={handleGenerateCode}
+                  disabled={isLoading}
+                >
+                  <IconSymbol name="qrcode" size={20} color={colors.card} />
+                  <Text style={styles.connectionButtonText}>
+                    {isLoading ? 'Generating...' : 'Generate Code'}
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  style={[styles.connectionButton, { backgroundColor: colors.secondary, opacity: isLoading ? 0.6 : 1 }]}
+                  onPress={() => setShowCodeInput(!showCodeInput)}
+                  disabled={isLoading}
+                >
+                  <IconSymbol name="checkmark.circle" size={20} color={colors.card} />
+                  <Text style={styles.connectionButtonText}>
+                    Enter Code
+                  </Text>
+                </Pressable>
+              </View>
+
+              {showCodeDisplay && generatedCode && (
+                <View
+                  style={[
+                    styles.codeDisplay,
+                    {
+                      backgroundColor: isDark ? colors.dark : colors.background,
+                      borderColor: colors.primary,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.codeLabel, { color: colors.textSecondary }]}>
+                    Share this code (expires in 24 hours):
+                  </Text>
+                  <Text style={[styles.code, { color: isDark ? colors.card : colors.text }]}>
+                    {generatedCode}
+                  </Text>
+                  <Pressable
+                    style={[styles.copyButton, { backgroundColor: colors.primary }]}
+                    onPress={() => {
+                      Alert.alert('Copied', 'Code copied to clipboard');
+                    }}
+                  >
+                    <IconSymbol name="doc.on.doc" size={16} color={colors.card} />
+                    <Text style={styles.copyButtonText}>Copy</Text>
+                  </Pressable>
+                </View>
+              )}
+
+              {showCodeInput && (
+                <View style={styles.codeInputContainer}>
+                  <TextInput
+                    style={[
+                      styles.codeInput,
+                      {
+                        backgroundColor: isDark ? colors.dark : colors.background,
+                        color: isDark ? colors.card : colors.text,
+                        borderColor: colors.primary,
+                      },
+                    ]}
+                    placeholder="Enter 6-8 character code"
+                    placeholderTextColor={colors.textSecondary}
+                    value={connectionCode}
+                    onChangeText={setConnectionCode}
+                    maxLength={8}
+                    autoCapitalize="characters"
+                  />
+                  <Pressable
+                    style={[styles.submitCodeButton, { backgroundColor: colors.primary, opacity: isLoading ? 0.6 : 1 }]}
+                    onPress={handleConnectWithCode}
+                    disabled={isLoading}
+                  >
+                    <Text style={styles.submitCodeButtonText}>
+                      {isLoading ? 'Connecting...' : 'Connect'}
+                    </Text>
+                  </Pressable>
+                </View>
+              )}
+            </View>
+          )}
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    // backgroundColor handled dynamically
-  },
   container: {
     flex: 1,
   },
-  contentContainer: {
-    padding: 20,
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingVertical: 16,
   },
-  contentContainerWithTabBar: {
-    paddingBottom: 100, // Extra padding for floating tab bar
+  scrollContentWithTabBar: {
+    paddingBottom: 100,
+  },
+  setupContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+  },
+  setupTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  setupText: {
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 32,
+  },
+  setupForm: {
+    width: '100%',
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  input: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    marginBottom: 16,
+  },
+  setupButton: {
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  setupButtonText: {
+    color: colors.card,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  card: {
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.1)',
+    elevation: 2,
   },
   profileHeader: {
+    flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 12,
-    padding: 32,
-    marginBottom: 16,
-    gap: 12,
+    gap: 16,
+  },
+  profileInfo: {
+    flex: 1,
+  },
+  editNameContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  nameContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   name: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    // color handled dynamically
+    fontSize: 20,
+    fontWeight: '700',
   },
-  email: {
+  nameInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
     fontSize: 16,
-    // color handled dynamically
+  },
+  saveNameButton: {
+    padding: 6,
+  },
+  userId: {
+    fontSize: 12,
+    marginTop: 4,
   },
   section: {
-    borderRadius: 12,
-    padding: 20,
-    gap: 12,
+    marginBottom: 24,
   },
-  infoRow: {
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  connectionStatus: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    marginBottom: 16,
   },
-  infoText: {
+  connectionInfo: {
+    flex: 1,
+  },
+  connectionTitle: {
     fontSize: 16,
-    // color handled dynamically
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  connectionSubtitle: {
+    fontSize: 13,
+  },
+  acceptButton: {
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  acceptButtonText: {
+    color: colors.card,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  disconnectButton: {
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+  },
+  disconnectButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  noConnectionText: {
+    fontSize: 14,
+    marginBottom: 16,
+    lineHeight: 20,
+  },
+  connectionButtonsContainer: {
+    gap: 8,
+  },
+  connectionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 8,
+    gap: 8,
+  },
+  connectionButtonText: {
+    color: colors.card,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  codeDisplay: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 12,
+    alignItems: 'center',
+  },
+  codeLabel: {
+    fontSize: 12,
+    marginBottom: 8,
+  },
+  code: {
+    fontSize: 28,
+    fontWeight: '700',
+    letterSpacing: 2,
+    marginBottom: 12,
+    fontFamily: 'monospace',
+  },
+  copyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+    gap: 6,
+  },
+  copyButtonText: {
+    color: colors.card,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  codeInputContainer: {
+    marginTop: 12,
+    gap: 8,
+  },
+  codeInput: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    textAlign: 'center',
+  },
+  submitCodeButton: {
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  submitCodeButtonText: {
+    color: colors.card,
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

@@ -1,105 +1,167 @@
-import React from "react";
-import { Stack, Link } from "expo-router";
-import { FlatList, Pressable, StyleSheet, View, Text, Alert, Platform } from "react-native";
-import { IconSymbol } from "@/components/IconSymbol";
-import { GlassView } from "expo-glass-effect";
-import { useTheme } from "@react-navigation/native";
 
-const ICON_COLOR = "#007AFF";
+import React, { useState, useEffect } from 'react';
+import { Stack, useRouter } from 'expo-router';
+import {
+  FlatList,
+  Pressable,
+  StyleSheet,
+  View,
+  Text,
+  Alert,
+  Platform,
+  useColorScheme,
+  ActivityIndicator,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { IconSymbol } from '@/components/IconSymbol';
+import { useBillContext } from '@/contexts/BillContext';
+import BillCard from '@/components/BillCard';
+import { colors } from '@/styles/commonStyles';
+import { Bill } from '@/types/bill';
 
 export default function HomeScreen() {
-  const theme = useTheme();
-  const modalDemos = [
-    {
-      title: "Standard Modal",
-      description: "Full screen modal presentation",
-      route: "/modal",
-      color: "#007AFF",
-    },
-    {
-      title: "Form Sheet",
-      description: "Bottom sheet with detents and grabber",
-      route: "/formsheet",
-      color: "#34C759",
-    },
-    {
-      title: "Transparent Modal",
-      description: "Overlay without obscuring background",
-      route: "/transparent-modal",
-      color: "#FF9500",
-    }
-  ];
+  const router = useRouter();
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  const { currentUser, bills, updateBill, sharedConnection, isLoading } = useBillContext();
+  const [filteredBills, setFilteredBills] = useState<Bill[]>([]);
 
-  const renderModalDemo = ({ item }: { item: (typeof modalDemos)[0] }) => (
-    <GlassView style={[
-      styles.demoCard,
-      Platform.OS !== 'ios' && { backgroundColor: theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }
-    ]} glassEffectStyle="regular">
-      <View style={[styles.demoIcon, { backgroundColor: item.color }]}>
-        <IconSymbol name="square.grid.3x3" color="white" size={24} />
-      </View>
-      <View style={styles.demoContent}>
-        <Text style={[styles.demoTitle, { color: theme.colors.text }]}>{item.title}</Text>
-        <Text style={[styles.demoDescription, { color: theme.dark ? '#98989D' : '#666' }]}>{item.description}</Text>
-      </View>
-      <Link href={item.route as any} asChild>
-        <Pressable>
-          <GlassView style={[
-            styles.tryButton,
-            Platform.OS !== 'ios' && { backgroundColor: theme.dark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.08)' }
-          ]} glassEffectStyle="clear">
-            <Text style={[styles.tryButtonText, { color: theme.colors.primary }]}>Try It</Text>
-          </GlassView>
-        </Pressable>
-      </Link>
-    </GlassView>
+  useEffect(() => {
+    setFilteredBills(bills);
+  }, [bills]);
+
+  const handleTogglePaid = async (billId: string, paidByUser1: boolean, paidByUser2: boolean) => {
+    try {
+      const bill = bills.find(b => b.id === billId);
+      if (!bill) return;
+
+      const updatedBill = {
+        ...bill,
+        paidByUser1,
+        paidByUser2,
+      };
+
+      await updateBill(updatedBill);
+    } catch (error) {
+      console.log('Error updating bill:', error);
+      Alert.alert('Error', 'Failed to update bill');
+    }
+  };
+
+  const handleAddBill = () => {
+    router.push('/(tabs)/(home)/add-bill');
+  };
+
+  const handleBillPress = (billId: string) => {
+    router.push({
+      pathname: '/(tabs)/(home)/bill-details',
+      params: { billId },
+    });
+  };
+
+  const renderBill = ({ item }: { item: Bill }) => (
+    <BillCard
+      bill={item}
+      onPress={() => handleBillPress(item.id)}
+      onTogglePaid={(paidByUser1, paidByUser2) =>
+        handleTogglePaid(item.id, paidByUser1, paidByUser2)
+      }
+      currentUserId={currentUser?.id || ''}
+      isShared={!!sharedConnection && sharedConnection.user1Accepted && sharedConnection.user2Accepted}
+    />
   );
 
   const renderHeaderRight = () => (
-    <Pressable
-      onPress={() => Alert.alert("Not Implemented", "This feature is not implemented yet")}
-      style={styles.headerButtonContainer}
-    >
-      <IconSymbol name="plus" color={theme.colors.primary} />
+    <Pressable onPress={handleAddBill} style={styles.headerButton}>
+      <IconSymbol name="plus" color={colors.primary} size={24} />
     </Pressable>
   );
 
   const renderHeaderLeft = () => (
     <Pressable
-      onPress={() => Alert.alert("Not Implemented", "This feature is not implemented yet")}
-      style={styles.headerButtonContainer}
+      onPress={() => router.push('/(tabs)/profile')}
+      style={styles.headerButton}
     >
-      <IconSymbol
-        name="gear"
-        color={theme.colors.primary}
-      />
+      <IconSymbol name="gear" color={colors.primary} size={24} />
     </Pressable>
   );
+
+  if (isLoading) {
+    return (
+      <View
+        style={[
+          styles.container,
+          { backgroundColor: isDark ? colors.dark : colors.background },
+        ]}
+      >
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <>
       {Platform.OS === 'ios' && (
         <Stack.Screen
           options={{
-            title: "Building the app...",
+            title: 'Bills',
             headerRight: renderHeaderRight,
             headerLeft: renderHeaderLeft,
           }}
         />
       )}
-      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-        <FlatList
-          data={modalDemos}
-          renderItem={renderModalDemo}
-          keyExtractor={(item) => item.route}
-          contentContainerStyle={[
-            styles.listContainer,
-            Platform.OS !== 'ios' && styles.listContainerWithTabBar
-          ]}
-          contentInsetAdjustmentBehavior="automatic"
-          showsVerticalScrollIndicator={false}
-        />
-      </View>
+      <SafeAreaView
+        style={[
+          styles.container,
+          { backgroundColor: isDark ? colors.dark : colors.background },
+        ]}
+        edges={['top']}
+      >
+        {!currentUser ? (
+          <View style={styles.emptyState}>
+            <IconSymbol name="person.crop.circle.badge.exclamationmark" size={48} color={colors.primary} />
+            <Text style={[styles.emptyTitle, { color: isDark ? colors.card : colors.text }]}>
+              Welcome to Bills
+            </Text>
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+              Set up your profile to get started
+            </Text>
+            <Pressable
+              style={[styles.setupButton, { backgroundColor: colors.primary }]}
+              onPress={() => router.push('/(tabs)/profile')}
+            >
+              <Text style={styles.setupButtonText}>Set Up Profile</Text>
+            </Pressable>
+          </View>
+        ) : filteredBills.length === 0 ? (
+          <View style={styles.emptyState}>
+            <IconSymbol name="doc.text" size={48} color={colors.primary} />
+            <Text style={[styles.emptyTitle, { color: isDark ? colors.card : colors.text }]}>
+              No Bills Yet
+            </Text>
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+              Add your first bill to get started
+            </Text>
+            <Pressable
+              style={[styles.setupButton, { backgroundColor: colors.primary }]}
+              onPress={handleAddBill}
+            >
+              <Text style={styles.setupButtonText}>Add Bill</Text>
+            </Pressable>
+          </View>
+        ) : (
+          <FlatList
+            data={filteredBills}
+            renderItem={renderBill}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={[
+              styles.listContainer,
+              Platform.OS !== 'ios' && styles.listContainerWithTabBar,
+            ]}
+            showsVerticalScrollIndicator={false}
+          />
+        )}
+      </SafeAreaView>
     </>
   );
 }
@@ -107,55 +169,42 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    // backgroundColor handled dynamically
   },
   listContainer: {
     paddingVertical: 16,
     paddingHorizontal: 16,
   },
   listContainerWithTabBar: {
-    paddingBottom: 100, // Extra padding for floating tab bar
+    paddingBottom: 100,
   },
-  demoCard: {
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
+  headerButton: {
+    padding: 8,
   },
-  demoIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+  emptyState: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
+    paddingHorizontal: 32,
   },
-  demoContent: {
-    flex: 1,
-  },
-  demoTitle: {
-    fontSize: 18,
+  emptyTitle: {
+    fontSize: 20,
     fontWeight: '600',
-    marginBottom: 4,
-    // color handled dynamically
+    marginTop: 16,
+    marginBottom: 8,
   },
-  demoDescription: {
+  emptyText: {
     fontSize: 14,
-    lineHeight: 18,
-    // color handled dynamically
+    textAlign: 'center',
+    marginBottom: 24,
   },
-  headerButtonContainer: {
-    padding: 6,
+  setupButton: {
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
   },
-  tryButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 6,
-  },
-  tryButtonText: {
-    fontSize: 14,
+  setupButtonText: {
+    color: colors.card,
+    fontSize: 16,
     fontWeight: '600',
-    // color handled dynamically
   },
 });

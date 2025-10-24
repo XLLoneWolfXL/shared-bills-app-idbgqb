@@ -54,7 +54,7 @@ export const BillProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             const user: User = {
               id: authUser.id,
               name: userProfile.name || 'User',
-              email: authUser.email,
+              email: authUser.email || '',
             };
 
             console.log('Setting current user state:', user);
@@ -74,7 +74,7 @@ export const BillProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                   setConnectedUser({
                     id: connectedUserId,
                     name: connectedUserProfile.name,
-                    email: connectedUserProfile.email,
+                    email: connectedUserProfile.email || '',
                   });
                 }
               }
@@ -184,7 +184,9 @@ export const BillProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         ...user,
         id: authUser.id,
       };
+      console.log('Setting currentUserState to:', userToSet);
       setCurrentUserState(userToSet);
+      console.log('State updated, currentUser should now be:', userToSet);
       
       // Verify the profile was saved by fetching it again
       const verifyProfile = await supabaseService.getUserProfile(authUser.id);

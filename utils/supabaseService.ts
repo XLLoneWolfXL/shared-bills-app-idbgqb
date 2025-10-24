@@ -17,6 +17,7 @@ export const createUserProfile = async (userId: string, name: string, email: str
       throw new Error('User ID mismatch with authenticated user');
     }
     
+    console.log('Attempting to insert user profile into database');
     const { data, error } = await supabase
       .from('users')
       .insert([
@@ -33,6 +34,8 @@ export const createUserProfile = async (userId: string, name: string, email: str
       console.log('Error creating user profile - error code:', error.code);
       console.log('Error creating user profile - error message:', error.message);
       console.log('Error creating user profile - full error:', JSON.stringify(error));
+      console.log('Error creating user profile - details:', error.details);
+      console.log('Error creating user profile - hint:', error.hint);
       throw error;
     }
     
@@ -41,6 +44,10 @@ export const createUserProfile = async (userId: string, name: string, email: str
   } catch (error) {
     console.log('Error creating user profile:', error);
     console.log('Error type:', error instanceof Error ? error.constructor.name : typeof error);
+    if (error instanceof Error) {
+      console.log('Error message:', error.message);
+      console.log('Error stack:', error.stack);
+    }
     throw error;
   }
 };

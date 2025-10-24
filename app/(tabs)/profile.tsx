@@ -32,6 +32,7 @@ export default function ProfileScreen() {
   const [showCodeDisplay, setShowCodeDisplay] = useState(false);
 
   useEffect(() => {
+    console.log('Profile screen - useEffect triggered, currentUser:', currentUser);
     if (currentUser) {
       setEditedName(currentUser.name);
       console.log('Profile screen - currentUser updated:', currentUser);
@@ -47,6 +48,9 @@ export default function ProfileScreen() {
       console.log('Profile screen focused - currentUser:', currentUser);
       if (currentUser) {
         setEditedName(currentUser.name);
+        console.log('Profile screen focused - updated editedName to:', currentUser.name);
+      } else {
+        console.log('Profile screen focused - no currentUser');
       }
     }, [currentUser])
   );
@@ -61,11 +65,13 @@ export default function ProfileScreen() {
 
     try {
       setIsLoading(true);
+      console.log('Saving name for user:', currentUser.id);
       const updatedUser: User = {
         ...currentUser,
         name: editedName.trim(),
       };
       await setCurrentUser(updatedUser);
+      console.log('Name saved successfully');
       setIsEditingName(false);
       Alert.alert('Success', 'Name updated successfully');
     } catch (error) {
@@ -172,6 +178,7 @@ export default function ProfileScreen() {
   };
 
   console.log('Profile screen render - currentUser:', currentUser);
+  console.log('Profile screen render - isLoading:', isLoading);
   
   if (!currentUser) {
     console.log('Showing profile creation screen');
@@ -227,21 +234,19 @@ export default function ProfileScreen() {
                   
                   if (!authUser) {
                     Alert.alert('Error', 'You must be logged in to create a profile');
+                    setIsLoading(false);
                     return;
                   }
 
                   const newUser: User = {
                     id: authUser.id,
                     name: editedName.trim(),
-                    email: authUser.email,
+                    email: authUser.email || '',
                   };
                   
                   console.log('Calling setCurrentUser with:', newUser);
                   await setCurrentUser(newUser);
-                  console.log('Profile created successfully, currentUser state:', currentUser);
-                  
-                  // Wait a moment for state to update
-                  await new Promise(resolve => setTimeout(resolve, 300));
+                  console.log('Profile created successfully');
                   
                   Alert.alert('Success', 'Profile created successfully!');
                 } catch (error) {
